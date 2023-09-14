@@ -1,0 +1,12 @@
+version: "3.9"
+services:
+  reddit-notif:
+    build: .
+    env_file:
+      - .env
+    depends_on:
+      - redis
+  redis:
+    image: redis:latest
+    ports:
+      - '6379:6379'
