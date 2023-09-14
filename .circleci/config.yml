@@ -25,4 +25,4 @@ workflows:
       - build-docker:
           filters:
             branches:
-              only: master
+              only: main
