@@ -69,17 +69,18 @@ class RedditClient:
         posts_today = [post for post in posts if today_str in post["title"]]
         if not posts_today:
             raise PostNotFoundError
-        r.set(f"postid.{today_str}", posts_today[0]["id"])
+        r.set(f"postid.{today_str}", posts_today[0]["id"], ex=60 * 60 * 25)
         return posts_today[0]["id"]
 
     def get_new_comments(self) -> Generator[Comment, None, None]:
         post_id = self.get_todays_post_id()
-        after_id = r.get("after_id")
         response = self._get_with_auth(f"https://oauth.reddit.com{getenv('SUBREDDIT')}/comments/{post_id}?depth=1")
         comments = [child["data"] for child in response.json()[1]["data"]["children"]]
+        ids_to_add = set()
         for comment in itertools.islice(comments, MAX_COMMENTS_PER_FETCH):
-            if comment["id"] == after_id:
+            if r.sismember(f"commentids.{post_id}", comment["id"]):
                 break
+            ids_to_add.add(comment["id"])
             yield Comment(
                 id=comment["id"],
                 author=comment["author"],
@@ -88,6 +89,5 @@ class RedditClient:
                 timestamp=comment["created_utc"],
             )
         if comments:
-            r.set("after_id", comments[0]["id"])
-            r.sadd(f"commentids.{post_id}", comments[0]["id"])
+            r.sadd(f"commentids.{post_id}", *ids_to_add)
             r.expire(f"commentids.{post_id}", 60 * 60 * 25)
