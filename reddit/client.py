@@ -1,3 +1,4 @@
+import itertools
 import logging
 from datetime import datetime
 from os import getenv
@@ -14,6 +15,7 @@ from reddit.structs import Comment
 
 
 USER_AGENT = "redditnotif/1.0"
+MAX_COMMENTS_PER_FETCH = 30
 
 
 r = redis.Redis(host=getenv("REDIS_HOST"), port=6379, decode_responses=True)
@@ -75,7 +77,7 @@ class RedditClient:
         after_id = r.get("after_id")
         response = self._get_with_auth(f"https://oauth.reddit.com{getenv('SUBREDDIT')}/comments/{post_id}?depth=1")
         comments = [child["data"] for child in response.json()[1]["data"]["children"]]
-        for comment in comments:
+        for comment in itertools.islice(comments, MAX_COMMENTS_PER_FETCH):
             if comment["id"] == after_id:
                 break
             yield Comment(
@@ -87,3 +89,5 @@ class RedditClient:
             )
         if comments:
             r.set("after_id", comments[0]["id"])
+            r.sadd(f"commentids.{post_id}", comments[0]["id"])
+            r.expire(f"commentids.{post_id}", 60 * 60 * 25)
