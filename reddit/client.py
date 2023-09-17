@@ -88,6 +88,6 @@ class RedditClient:
                 author_icon=self._get_author_icon(comment),
                 timestamp=comment["created_utc"],
             )
-        if comments:
+        if ids_to_add:
             r.sadd(f"commentids.{post_id}", *ids_to_add)
             r.expire(f"commentids.{post_id}", 60 * 60 * 25)
