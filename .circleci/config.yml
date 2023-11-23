@@ -17,7 +17,22 @@ jobs:
           command: |
             echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USER" --password-stdin
             docker buildx create --use
-            docker buildx build --push --platform linux/arm/v7,linux/arm64/v8 --tag galonsky/redditnotif:latest .
+            docker buildx build --push --platform linux/arm/v7,linux/arm64/v8 -t galonsky/redditnotif:latest -t galonsky/diddukewin:$CIRCLE_SHA1 .
+
+  build-docker-tag:
+    docker:
+      - image: cimg/base:2023.09
+    resource_class: arm.medium
+    working_directory: ~/repo
+    steps:
+      - setup_remote_docker
+      - checkout
+      - run:
+          name: configure and run buildx
+          command: |
+            echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USER" --password-stdin
+            docker buildx create --use
+            docker buildx build --push --platform linux/arm/v7,linux/arm64/v8 -t galonsky/diddukewin:$CIRCLE_TAG .
 workflows:
   version: 2
   tests:
@@ -26,3 +41,11 @@ workflows:
           filters:
             branches:
               only: main
+            tags:
+              ignore: /.*/
+      - build-docker-tag:
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v.*/
