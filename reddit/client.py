@@ -1,6 +1,6 @@
 import itertools
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from os import getenv
 from typing import Optional, Generator
 from zoneinfo import ZoneInfo
@@ -16,6 +16,7 @@ from reddit.structs import Comment
 
 USER_AGENT = "redditnotif/1.0"
 MAX_COMMENTS_PER_FETCH = 30
+NEW_POST_HOURS_BEFORE_MIDNIGHT = getenv("NEW_POST_HOURS_BEFORE_MIDNIGHT", 1)
 
 
 r = redis.Redis(host=getenv("REDIS_HOST"), port=6379, decode_responses=True)
@@ -57,7 +58,10 @@ class RedditClient:
             return None
 
     def get_todays_post_id(self) -> str:
-        today_str = datetime.now(tz=ZoneInfo("America/New_York")).strftime("%m/%d/%Y")
+        today_str = (
+                datetime.now(tz=ZoneInfo("America/New_York")) +
+                timedelta(hours=NEW_POST_HOURS_BEFORE_MIDNIGHT)
+        ).strftime("%m/%d/%Y")
         cached = r.get(f"postid.{today_str}")
         if cached:
             return cached
