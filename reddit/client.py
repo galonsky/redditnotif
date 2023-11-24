@@ -10,6 +10,7 @@ import requests
 from requests import Response
 from requests.auth import HTTPBasicAuth
 
+from common.date_utils import PostTime
 from reddit.exceptions import PostNotFoundError
 from reddit.structs import Comment
 
@@ -58,10 +59,8 @@ class RedditClient:
             return None
 
     def get_todays_post_id(self) -> str:
-        today_str = (
-                datetime.now(tz=ZoneInfo("America/New_York")) +
-                timedelta(hours=NEW_POST_HOURS_BEFORE_MIDNIGHT)
-        ).strftime("%m/%d/%Y")
+        today = PostTime.as_of_now(NEW_POST_HOURS_BEFORE_MIDNIGHT)
+        today_str = str(today)
         cached = r.get(f"postid.{today_str}")
         if cached:
             return cached
