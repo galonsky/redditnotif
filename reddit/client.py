@@ -1,9 +1,7 @@
 import itertools
 import logging
-from datetime import datetime, timedelta
 from os import getenv
 from typing import Optional, Generator
-from zoneinfo import ZoneInfo
 
 import redis
 import requests
@@ -11,6 +9,7 @@ from requests import Response
 from requests.auth import HTTPBasicAuth
 
 from common.date_utils import PostTime
+from common.event_bus import event_bus, NEW_POST_TOPIC
 from reddit.exceptions import PostNotFoundError
 from reddit.structs import Comment
 
@@ -46,11 +45,19 @@ class RedditClient:
         return token
 
     def _get_with_auth(self, url: str) -> Response:
+        headers = self._auth_headers()
+        return requests.get(url, headers=headers)
+
+    def _post_with_auth(self, url: str, body: dict) -> Response:
+        headers = self._auth_headers()
+        return requests.post(url, headers=headers, data=body)
+
+    def _auth_headers(self):
         headers = {
             "Authorization": f"bearer {self.access_token}",
             "User-Agent": USER_AGENT
         }
-        return requests.get(url, headers=headers)
+        return headers
 
     def _get_author_icon(self, comment: dict) -> Optional[str]:
         try:
@@ -61,6 +68,7 @@ class RedditClient:
     def get_todays_post_id(self) -> str:
         today = PostTime.as_of_now(NEW_POST_HOURS_BEFORE_MIDNIGHT)
         today_str = str(today)
+        yesterday_str = str(today.previous_day())
         cached = r.get(f"postid.{today_str}")
         if cached:
             return cached
@@ -73,7 +81,14 @@ class RedditClient:
         if not posts_today:
             raise PostNotFoundError
         r.set(f"postid.{today_str}", posts_today[0]["id"], ex=60 * 60 * 25)
+
+        posts_yesterday = [post for post in posts if yesterday_str in post["title"]]
+        if posts_yesterday:
+            event_bus.publish(NEW_POST_TOPIC, {"old_post_id": posts_yesterday[0]["id"], "new_post_id": posts_today[0]["id"]})
         return posts_today[0]["id"]
+
+    def _comment_is_valid(self, comment: dict) -> bool:
+        return not comment["body"].startswith("New daily thread is posted")
 
     def get_new_comments(self) -> Generator[Comment, None, None]:
         post_id = self.get_todays_post_id()
@@ -84,13 +99,21 @@ class RedditClient:
             if r.sismember(f"commentids.{post_id}", comment["id"]):
                 break
             ids_to_add.add(comment["id"])
-            yield Comment(
-                id=comment["id"],
-                author=comment["author"],
-                body=comment["body"],
-                author_icon=self._get_author_icon(comment),
-                timestamp=comment["created_utc"],
-            )
+            if self._comment_is_valid(comment):
+                yield Comment(
+                    id=comment["id"],
+                    author=comment["author"],
+                    body=comment["body"],
+                    author_icon=self._get_author_icon(comment),
+                    timestamp=comment["created_utc"],
+                )
         if ids_to_add:
             r.sadd(f"commentids.{post_id}", *ids_to_add)
             r.expire(f"commentids.{post_id}", 60 * 60 * 25)
+
+    def post_comment(self, post_id: str, content: str):
+        post_fullname = f"t3_{post_id}"
+        return self._post_with_auth(f"https://oauth.reddit.com/api/comment", {
+            "parent": post_fullname,
+            "text": content,
+        })
