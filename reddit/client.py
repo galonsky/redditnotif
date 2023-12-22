@@ -1,5 +1,6 @@
 import itertools
 import logging
+from html import unescape
 from os import getenv
 from typing import Optional, Generator
 
@@ -103,7 +104,7 @@ class RedditClient:
                 yield Comment(
                     id=comment["id"],
                     author=comment["author"],
-                    body=comment["body"],
+                    body=unescape(comment["body"]),
                     author_icon=self._get_author_icon(comment),
                     timestamp=comment["created_utc"],
                 )
