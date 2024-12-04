@@ -18,6 +18,7 @@ from reddit.structs import Comment
 USER_AGENT = "redditnotif/1.0"
 MAX_COMMENTS_PER_FETCH = 30
 NEW_POST_HOURS_BEFORE_MIDNIGHT = getenv("NEW_POST_HOURS_BEFORE_MIDNIGHT", 1)
+POST_TITLE_FORMAT = getenv("POST_TITLE_FORMAT", "{}")
 
 
 r = redis.Redis(host=getenv("REDIS_HOST"), port=6379, decode_responses=True)
@@ -75,15 +76,15 @@ class RedditClient:
             return cached
 
         logger.info("Fetching today's post")
-        response = self._get_with_auth(f"https://oauth.reddit.com{getenv('SUBREDDIT')}/new.json?limit=2")
+        response = self._get_with_auth(f"https://oauth.reddit.com{getenv('SUBREDDIT')}/new.json?limit=10")
         posts = [child['data'] for child in response.json()["data"]["children"]]
 
-        posts_today = [post for post in posts if today_str in post["title"]]
+        posts_today = [post for post in posts if POST_TITLE_FORMAT.format(today_str) in post["title"]]
         if not posts_today:
             raise PostNotFoundError
         r.set(f"postid.{today_str}", posts_today[0]["id"], ex=60 * 60 * 25)
 
-        posts_yesterday = [post for post in posts if yesterday_str in post["title"]]
+        posts_yesterday = [post for post in posts if POST_TITLE_FORMAT.format(yesterday_str) in post["title"]]
         if posts_yesterday:
             event_bus.publish(NEW_POST_TOPIC, {"old_post_id": posts_yesterday[0]["id"], "new_post_id": posts_today[0]["id"]})
         return posts_today[0]["id"]
